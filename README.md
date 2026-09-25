@@ -106,6 +106,66 @@ python experiments/pretrained_probe.py                     # needs huggingface.c
 python experiments/pretrained_probe.py --models meta-llama/Llama-3.2-1B   # HF_TOKEN
 ```
 
+## GPT-2 results (H1/H2)
+
+These results come from `python experiments/pretrained_probe.py`: 20 relabellings
+per null, k = 64. Each model takes about 5 minutes on CPU, and the graph
+spectra are computed once and shared.
+
+**The tokenizer graphs.** GPT-2 has 50,000 merges over 50,257 tokens. Each
+graph's largest connected component holds all but ~67 tokens. Both graphs are
+very weakly connected: λ₂ = 0.0016 for the merge DAG and 0.0012 for the
+substring poset, both nearly tree-like with byte-token hubs.
+
+**Embeddings respect both graphs, by a constant amount at every model size.**
+The table uses the mean-centred `E` and the length-stratified null.
+
+| model | params | eff. rank | anisotropy (raw) | Dirichlet ratio: merge | Dirichlet ratio: poset | alignment@64: poset (null) |
+|-------|-------:|---------:|----------------:|-----------------------:|-----------------------:|---------------------------:|
+| gpt2 | 124M | 714 / 768 | 0.268 | 0.873 | 0.779 | 0.044 (0.005) |
+| gpt2-medium | 355M | 967 / 1024 | 0.308 | 0.873 | 0.777 | 0.048 (0.005) |
+| gpt2-large | 774M | 1183 / 1280 | 0.082 | 0.869 | 0.773 | 0.048 (0.005) |
+| gpt2-xl | 1.5B | 1490 / 1600 | 0.079 | 0.874 | 0.780 | 0.049 (0.005) |
+
+Mean cosine similarity of centred embeddings across each kind of graph edge.
+The substring-poset edges are split by how the shorter token sits in the
+longer one. Length-matched random pairs give ≈ 0.00–0.01 for every row.
+
+| edge kind | edges | gpt2 | medium | large | xl |
+|-----------|------:|-----:|-------:|------:|---:|
+| space variant (`the` → ` the`) | 8,533 | 0.549 | 0.559 | 0.531 | 0.525 |
+| prefix (`under` → `underst`) | 49,996 | 0.288 | 0.295 | 0.316 | 0.305 |
+| suffix (`ing` → `ting`) | 41,122 | 0.144 | 0.136 | 0.134 | 0.127 |
+| infix | 11,219 | 0.014 | 0.015 | 0.013 | 0.013 |
+| merge DAG (parent–child) | 99,756 | 0.171 | 0.168 | 0.178 | 0.171 |
+
+What these results show:
+
+* **H2 holds locally.** Across every model, neighbouring tokens in the
+  substring poset have ~22% less embedding variation than random pairs of the
+  same length (Dirichlet ratio ≈ 0.78). The merge DAG gives ≈ 0.87, so the
+  poset, which is *order* structure, is the better description of embedding
+  geometry than the merge *history*. The z-scores are in the hundreds, but
+  with 50k vertices the effect sizes above are what matter.
+* **The effect is scale-invariant.** The ratio barely moves over a 12× range of
+  parameters, while effective rank doubles and raw anisotropy drops ~4×. The
+  tokenizer's order structure takes up a fixed share of the embedding's
+  geometry, independent of how much else the model packs in.
+* **Only word-boundary structure is used.** Space-variant and prefix edges
+  carry the signal, suffix edges carry about half as much, and infix edges are
+  at chance. The model encodes where a token *starts* far more than what it
+  *contains*. The substring poset is too coarse a graph: a poset of prefixes
+  (the trie) may be the natural object instead.
+* **Global structure is weak.** The top-64 singular directions overlap the 64
+  smoothest Laplacian modes at only ~0.05, about 10× the length null but small
+  in absolute terms. The dominant stretch directions of `E` are not the
+  graph's global modes. The structure lives in local neighbourhoods, which is
+  exactly what a Dirichlet-type constraint acts on.
+
+Caveats: token frequency is not controlled; under-trained "glitch" tokens could
+shift the numbers; and all four models share one tokenizer and one training
+corpus.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,
@@ -154,9 +214,10 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Run H1/H2 on real tokenizers and models (GPT-2, Llama-3, Mistral): compare
-  the spectra of the merge DAG and the substring poset across vocabulary sizes.
-  Measure how pretrained `wte` matrices align with them.
+* Run H1/H2 on a model with untied embeddings (Llama 3, needs `HF_TOKEN`) to
+  compare `E_in` and `E_out`, and on other tokenizers and vocabulary sizes.
+* Add a prefix-trie graph and a frequency-stratified null, since word-boundary
+  edges carry the GPT-2 signal.
 * Test on a transformer rather than a bigram model, where input and output
   geometry can differ (tied vs. untied embeddings).
 * Treat `Σ` as a hyperparameter family: learnable-but-regularised spectra and

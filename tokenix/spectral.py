@@ -70,3 +70,9 @@ def spectrum(W: sp.spmatrix, normalized: bool = True, k: int | None = None) -> S
 def graph_fourier(signal: np.ndarray, spec: Spectrum) -> np.ndarray:
     """Coefficients of a vertex signal (or matrix of signals) in the Laplacian eigenbasis."""
     return spec.eigenvectors.T @ signal
+
+
+def largest_component(W: sp.spmatrix) -> np.ndarray:
+    """Sorted vertex ids of the largest connected component."""
+    _, labels = csgraph.connected_components(W, directed=False)
+    return np.flatnonzero(labels == np.bincount(labels).argmax())

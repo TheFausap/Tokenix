@@ -37,6 +37,7 @@ tokenix/
   spec.py         TokenizerSpec: vocabulary + merge rules (the combinatorial object)
   bpe.py          dependency-free byte-level BPE trainer / encoder
   io.py           load Hugging Face tokenizer.json (BPE) files
+  hub.py          stdlib-only Hub access; range-reads a single tensor out of safetensors
   graphs.py       merge_graph, containment_graph (substring Hasse diagram), transition_graph
   spectral.py     Laplacians, eigendecomposition, Fiedler value/vector, heat trace
   embedding.py    SVD / polar decomposition, effective & stable rank, power-law α, anisotropy
@@ -45,7 +46,8 @@ tokenix/
   lm.py           tied-embedding bigram LM (NumPy, full-batch Adam) as a controlled testbed
   corpus.py       offline corpus: Python stdlib docstrings
 experiments/
-  spectral_probe.py   first end-to-end probe of H1–H4
+  spectral_probe.py   first end-to-end probe of H1–H4 (toy BPE + bigram LM)
+  pretrained_probe.py H1/H2 on pretrained models (GPT-2 small → XL by default)
 tests/
 ```
 
@@ -70,6 +72,38 @@ S = spectrum(containment_graph(tok), k=256)          # sparse: 256 smoothest mod
 E = np.load("wte.npy")                               # the model's (V, d) embedding
 print(embedding.profile(E)["effective_rank"])
 print(alignment.subspace_alignment(E, S, k=64, skip=S.n_components))
+```
+
+## Pretrained models (`experiments/pretrained_probe.py`)
+
+The script starts with the GPT-2 family: small, medium, large and XL. All four
+share one tokenizer and tie their input and output embeddings, so model scale
+varies while the graph stays fixed. Llama-style models with untied embeddings
+are the next step; the script then probes `E_in` and `E_out` separately.
+
+The script downloads `tokenizer.json` and **only the embedding tensor(s)**,
+using HTTP range requests into `model.safetensors`. It does not download the
+full checkpoint. Files are cached in `~/.cache/tokenix`, which can be
+overridden with `TOKENIX_CACHE`. Set `HF_TOKEN` for gated repositories.
+
+For the merge DAG and the substring poset, restricted to the largest connected
+component, it reports:
+
+* the **Dirichlet ratio**: the Dirichlet energy of `E` divided by its mean under
+  random vertex relabelling. A ratio below 1 means graph neighbours have more
+  similar embeddings than chance;
+* the **subspace alignment** of the top-k singular vectors with the k smoothest
+  Laplacian modes, against the same relabelling null.
+
+There are two nulls. The *uniform* null relabels vertices freely. The *length*
+null only swaps tokens of equal byte length, which rules out token length as
+the explanation. Every figure is also computed for the mean-centred `E`.
+Calibration: a random Gaussian `E` on an 11k-token vocabulary gives z ≈ 0.
+
+```bash
+python experiments/pretrained_probe.py --selftest          # offline sanity run
+python experiments/pretrained_probe.py                     # needs huggingface.co access
+python experiments/pretrained_probe.py --models meta-llama/Llama-3.2-1B   # HF_TOKEN
 ```
 
 ## First results (`experiments/spectral_probe.py`)

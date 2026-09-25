@@ -44,3 +44,32 @@ def subspace_alignment(E: np.ndarray, spec: Spectrum, k: int, skip: int = 0) -> 
     G = spec.eigenvectors[:, skip : skip + k]
     cos = np.linalg.svd(U.T @ G, compute_uv=False)
     return float(np.mean(cos**2))
+
+
+def stratified_permutation(groups: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """A random permutation that only swaps indices sharing the same group label."""
+    perm = np.arange(len(groups))
+    for g in np.unique(groups):
+        idx = np.flatnonzero(groups == g)
+        perm[idx] = rng.permutation(idx)
+    return perm
+
+
+def permutation_test(
+    stat, E: np.ndarray, n: int, rng: np.random.Generator, groups: np.ndarray | None = None
+) -> dict:
+    """Compare ``stat(E)`` to ``stat(E[perm])`` over ``n`` random row permutations.
+
+    Permuting the rows of ``E`` is the same as relabelling the graph's vertices:
+    the spectrum is unchanged, only the token <-> vertex correspondence is lost.
+    With ``groups`` the permutation is stratified (e.g. by token length), which
+    controls for whatever the grouping explains.
+    """
+    obs = stat(E)
+    null = np.array([
+        stat(E[rng.permutation(len(E)) if groups is None else stratified_permutation(groups, rng)])
+        for _ in range(n)
+    ])
+    sd = null.std(ddof=1) if n > 1 else np.nan
+    return {"observed": float(obs), "null_mean": float(null.mean()), "null_std": float(sd),
+            "ratio": float(obs / null.mean()), "z": float((obs - null.mean()) / sd)}

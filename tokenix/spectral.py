@@ -54,14 +54,20 @@ def spectrum(W: sp.spmatrix, normalized: bool = True, k: int | None = None) -> S
     """Laplacian eigendecomposition.
 
     Dense ``eigh`` when ``k`` is ``None`` (fine up to a few thousand vertices);
-    otherwise the ``k`` smallest eigenpairs via shift-invert Lanczos.
+    otherwise the ``k`` smallest eigenpairs via shift-invert Lanczos.  The LU
+    factorisation uses a minimum-degree ordering: tokenizer graphs have hub
+    vertices (single bytes) whose fill-in makes the default ordering ~100x slower.
     """
     L = laplacian(W, normalized)
     n_comp = csgraph.connected_components(W, directed=False)[0]
     if k is None or k >= L.shape[0] - 1:
         vals, vecs = la.eigh(L.toarray())
     else:
-        vals, vecs = sp.linalg.eigsh(L, k=k, sigma=-1e-3, which="LM")
+        shift = 1e-3
+        lu = sp.linalg.splu((L + shift * sp.identity(L.shape[0])).tocsc(), permc_spec="MMD_AT_PLUS_A")
+        op = sp.linalg.LinearOperator(L.shape, matvec=lu.solve, dtype=float)
+        mu, vecs = sp.linalg.eigsh(op, k=k, which="LM")
+        vals = 1.0 / mu - shift
         order = np.argsort(vals)
         vals, vecs = vals[order], vecs[:, order]
     return Spectrum(np.clip(vals, 0, None), vecs, int(n_comp))
@@ -70,3 +76,9 @@ def spectrum(W: sp.spmatrix, normalized: bool = True, k: int | None = None) -> S
 def graph_fourier(signal: np.ndarray, spec: Spectrum) -> np.ndarray:
     """Coefficients of a vertex signal (or matrix of signals) in the Laplacian eigenbasis."""
     return spec.eigenvectors.T @ signal
+
+
+def largest_component(W: sp.spmatrix) -> np.ndarray:
+    """Sorted vertex ids of the largest connected component."""
+    _, labels = csgraph.connected_components(W, directed=False)
+    return np.flatnonzero(labels == np.bincount(labels).argmax())

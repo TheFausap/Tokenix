@@ -139,3 +139,80 @@ def test_hf_loader(tmp_path):
     spec = load_hf_tokenizer_json(p)
     assert spec.tokens[2] == b" " and spec.tokens[4] == b" ab"
     assert spec.merges == [(0, 1, 3), (2, 3, 4)]
+
+
+def test_safetensors_reader(tmp_path):
+    import struct
+
+    from tokenix.hub import SafetensorsSource
+
+    a = np.arange(12, dtype=np.float32).reshape(3, 4)
+    b = np.array([1.5, -2.0], dtype=np.float32)
+    b_bf16 = (b.view(np.uint32) >> 16).astype(np.uint16)
+    header = {
+        "__metadata__": {"format": "pt"},
+        "wte.weight": {"dtype": "F32", "shape": [3, 4], "data_offsets": [0, 48]},
+        "x": {"dtype": "BF16", "shape": [2], "data_offsets": [48, 52]},
+    }
+    h = json.dumps(header).encode()
+    p = tmp_path / "model.safetensors"
+    p.write_bytes(struct.pack("<Q", len(h)) + h + a.tobytes() + b_bf16.tobytes())
+    src = SafetensorsSource(p)
+    assert set(src.names()) == {"wte.weight", "x"}
+    np.testing.assert_array_equal(src.load("wte.weight"), a)
+    np.testing.assert_array_equal(src.load("x"), b)
+
+
+def test_permutation_controls(tok):
+    from tokenix.spectral import largest_component
+
+    rng = np.random.default_rng(0)
+    groups = rng.integers(0, 3, 40)
+    perm = alignment.stratified_permutation(groups, rng)
+    assert sorted(perm) == list(range(40))
+    assert np.all(groups[perm] == groups)
+
+    W = containment_graph(tok)
+    lcc = largest_component(W)
+    L = laplacian(W[lcc][:, lcc])
+    sp_ = spectrum(W[lcc][:, lcc])
+
+    def stat(M):
+        return alignment.dirichlet_energy(M, L)
+
+    smooth = sp_.eigenvectors[:, 1:4]
+    noise = rng.standard_normal((len(lcc), 3))
+    assert alignment.permutation_test(stat, smooth, 20, rng)["z"] < -3
+    assert abs(alignment.permutation_test(stat, noise, 20, rng)["z"]) < 4
+
+
+def test_sparse_spectrum_matches_dense(tok):
+    from tokenix.spectral import largest_component
+
+    W = containment_graph(tok)
+    lcc = largest_component(W)
+    W = W[lcc][:, lcc]
+    dense = spectrum(W).eigenvalues[:5]
+    sparse = spectrum(W, k=5).eigenvalues
+    np.testing.assert_allclose(sparse, dense, atol=1e-8)
+
+
+def test_range_reads_retry_and_chunk(monkeypatch):
+    import http.client
+
+    from tokenix import hub
+
+    blob = bytes(range(256)) * 40
+    calls = {"n": 0}
+
+    def fake_request(url, start, end):
+        calls["n"] += 1
+        if calls["n"] == 2:  # one truncated transfer
+            raise http.client.IncompleteRead(b"x", 10)
+        return blob[start : end + 1]
+
+    monkeypatch.setattr(hub, "_request", fake_request)
+    monkeypatch.setattr(hub, "CHUNK", 1000)
+    monkeypatch.setattr(hub.time, "sleep", lambda s: None)
+    assert hub._read_range("u", 5, 4005) == blob[5:4005]
+    assert calls["n"] == 5  # 4 chunks + 1 retry

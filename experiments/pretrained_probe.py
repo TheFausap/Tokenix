@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import scipy.sparse as sp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -87,8 +88,58 @@ def probe_matrix(E: np.ndarray, spec: TokenizerSpec, graphs: dict, k: int, n_per
     return res
 
 
+def cover_kind(u: bytes, t: bytes) -> str:
+    """How the shorter token ``t`` sits inside its cover ``u`` in the substring poset."""
+    if u == b" " + t:
+        return "space-variant"
+    if u.startswith(t):
+        return "prefix"
+    if u.endswith(t):
+        return "suffix"
+    return "infix"
+
+
+def edge_type_report(E: np.ndarray, spec: TokenizerSpec, seed: int) -> dict:
+    """Mean cosine of centred embeddings across each kind of substring-poset edge
+    (and merge edges), against partners re-drawn at random with the same byte lengths."""
+    X = E - E.mean(axis=0)
+    X = X / np.maximum(np.linalg.norm(X, axis=1, keepdims=True), 1e-12)
+    lens = np.array([len(t) for t in spec.tokens])
+    by_len = {L: np.flatnonzero(lens == L) for L in np.unique(lens)}
+    rng = np.random.default_rng(seed)
+
+    def cos(a, b):
+        return float(np.mean(np.sum(X[a] * X[b], axis=1)))
+
+    def redraw(a):
+        out = a.copy()
+        for L in np.unique(lens[a]):
+            m = lens[a] == L
+            out[m] = rng.choice(by_len[L], m.sum())
+        return out
+
+    groups: dict[str, list] = {}
+    C = sp.triu(containment_graph(spec)).tocoo()
+    for i, j in zip(C.row, C.col):
+        u, t = (i, j) if lens[i] > lens[j] else (j, i)
+        groups.setdefault(cover_kind(spec.tokens[u], spec.tokens[t]), []).append((u, t))
+    M = sp.triu(merge_graph(spec)).tocoo()
+    groups["merge"] = list(zip(M.row, M.col))
+    out = {}
+    for k, pairs in groups.items():
+        p = np.array(pairs)
+        out[k] = {"edges": len(p), "cosine": cos(p[:, 0], p[:, 1]),
+                  "null": cos(redraw(p[:, 0]), redraw(p[:, 1]))}
+    return out
+
+
 def print_matrix_report(label: str, rep: dict) -> None:
     for mode, entry in rep.items():
+        if mode == "edge_types":
+            print(f"  [{label}] mean cosine (centred) across edges, vs length-matched random pairs")
+            for k, v in sorted(entry.items()):
+                print(f"    {k:<14} n={v['edges']:<7} cos={v['cosine']:.3f}  null={v['null']:.3f}")
+            continue
         print(f"  [{label}, {mode}] eff.rank={entry['effective_rank']:.1f}  "
               f"alpha={entry['powerlaw_alpha']:.2f}  anisotropy={entry['anisotropy']:.3f}")
         for key, t in entry.items():
@@ -97,9 +148,14 @@ def print_matrix_report(label: str, rep: dict) -> None:
                       f"±{t['null_std']:.4f}  ratio={t['ratio']:.3f}  z={t['z']:+.1f}")
 
 
+_GRAPHS: dict[int, dict] = {}
+
+
 def run(label: str, spec: TokenizerSpec, matrices: dict, args) -> dict:
     t0 = time.time()
-    graphs = graph_report(spec, args.k)
+    if id(spec) not in _GRAPHS:  # models sharing a tokenizer share its spectra
+        _GRAPHS[id(spec)] = graph_report(spec, args.k)
+    graphs = _GRAPHS[id(spec)]
     print(f"\n=== {label}: V={len(spec)}  ({time.time() - t0:.0f}s graphs+spectra)")
     for g, v in graphs.items():
         s = v["summary"]
@@ -110,6 +166,7 @@ def run(label: str, spec: TokenizerSpec, matrices: dict, args) -> dict:
             raise ValueError(f"{mname} has {E.shape[0]} rows < vocab {len(spec)}")
         E = E[: len(spec)]  # drop padding rows beyond the vocabulary
         rep = probe_matrix(E, spec, graphs, args.k, args.perms, args.seed)
+        rep["edge_types"] = edge_type_report(E, spec, args.seed)
         print_matrix_report(mname, rep)
         out["matrices"][mname] = rep
     return out

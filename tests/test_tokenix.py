@@ -184,3 +184,14 @@ def test_permutation_controls(tok):
     noise = rng.standard_normal((len(lcc), 3))
     assert alignment.permutation_test(stat, smooth, 20, rng)["z"] < -3
     assert abs(alignment.permutation_test(stat, noise, 20, rng)["z"]) < 4
+
+
+def test_sparse_spectrum_matches_dense(tok):
+    from tokenix.spectral import largest_component
+
+    W = containment_graph(tok)
+    lcc = largest_component(W)
+    W = W[lcc][:, lcc]
+    dense = spectrum(W).eigenvalues[:5]
+    sparse = spectrum(W, k=5).eigenvalues
+    np.testing.assert_allclose(sparse, dense, atol=1e-8)

@@ -187,6 +187,11 @@ def selftest(args) -> dict:
     return {"selftest": run("selftest (local BPE, bigram LM)", spec, {"E": m.E}, args)}
 
 
+def save(results: dict, out: Path) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(results, indent=1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", default=GPT2)
@@ -211,9 +216,9 @@ def main() -> None:
             E_in, E_out = load_embeddings(repo)
             mats = {"E_in": E_in} if E_out is None else {"E_in": E_in, "E_out": E_out}
             results[repo] = run(repo, spec, mats, args)
+            save(results, args.out)  # keep finished models if a later one fails
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(results, indent=1))
+    save(results, args.out)
     print(f"\nwrote {args.out}")
 
 

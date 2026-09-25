@@ -195,3 +195,24 @@ def test_sparse_spectrum_matches_dense(tok):
     dense = spectrum(W).eigenvalues[:5]
     sparse = spectrum(W, k=5).eigenvalues
     np.testing.assert_allclose(sparse, dense, atol=1e-8)
+
+
+def test_range_reads_retry_and_chunk(monkeypatch):
+    import http.client
+
+    from tokenix import hub
+
+    blob = bytes(range(256)) * 40
+    calls = {"n": 0}
+
+    def fake_request(url, start, end):
+        calls["n"] += 1
+        if calls["n"] == 2:  # one truncated transfer
+            raise http.client.IncompleteRead(b"x", 10)
+        return blob[start : end + 1]
+
+    monkeypatch.setattr(hub, "_request", fake_request)
+    monkeypatch.setattr(hub, "CHUNK", 1000)
+    monkeypatch.setattr(hub.time, "sleep", lambda s: None)
+    assert hub._read_range("u", 5, 4005) == blob[5:4005]
+    assert calls["n"] == 5  # 4 chunks + 1 retry

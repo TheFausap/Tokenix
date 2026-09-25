@@ -8,9 +8,11 @@ of a multi-GB checkpoint costs just ``V x d`` values.  Results are cached as
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import struct
+import time
 import urllib.request
 from pathlib import Path
 
@@ -30,6 +32,29 @@ def _request(url: str, start: int | None = None, end: int | None = None) -> byte
         headers["Range"] = f"bytes={start}-{end}"
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as r:
         return r.read()
+
+
+CHUNK = 32 << 20  # bytes per range request
+RETRIES = 4
+
+
+def _read_range(url: str, start: int, stop: int) -> bytes:
+    """Bytes ``[start, stop)`` in chunks, retrying truncated or failed transfers."""
+    parts = []
+    for a in range(start, stop, CHUNK):
+        b = min(a + CHUNK, stop)
+        for attempt in range(RETRIES + 1):
+            try:
+                data = _request(url, a, b - 1)
+                if len(data) != b - a:
+                    raise OSError(f"short read: {len(data)} of {b - a} bytes")
+                break
+            except (OSError, http.client.IncompleteRead):  # resets, timeouts, truncation
+                if attempt == RETRIES:
+                    raise
+                time.sleep(2 ** (attempt + 1))
+        parts.append(data)
+    return b"".join(parts)
 
 
 def _url(repo: str, filename: str, revision: str = "main") -> str:
@@ -58,7 +83,7 @@ class SafetensorsSource:
 
     def _read(self, start: int, stop: int) -> bytes:
         if self.remote:
-            return _request(self.location, start, stop - 1)
+            return _read_range(self.location, start, stop)
         with open(self.location, "rb") as f:
             f.seek(start)
             return f.read(stop - start)

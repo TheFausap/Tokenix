@@ -119,6 +119,7 @@ def main() -> None:
     print("\ntraining-set frequency of the target token →")
     print(f"{'':<26}" + "".join(f"{c:>{w}}" for c in cols))
     print(f"{'share of val tokens':<26}" + "".join(f"{share[c]:>{w}.1%}" for c in cols))
+    print(f"{'val tokens (n)':<26}" + "".join(f"{groups['baseline'][0][c]['n']:>{w},}" for c in cols))
     print(f"{'baseline loss':<26}" + "".join(f"{mean('baseline', c)[0]:>{w}.3f}" for c in cols))
     print("\nΔ loss vs baseline (mean over seeds; negative = better)")
     for name in sorted(g for g in groups if g != "baseline"):

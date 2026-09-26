@@ -270,9 +270,39 @@ cost fell from +0.012 at λ = 0.03 to +0.003 at λ = 0.3, then rose (+0.052 at
   `the`, or `under` from `understand`. The ~0.8 that models reach naturally is
   not a limit.
 
-The next check reuses these checkpoints:
-`experiments/eval_by_frequency.py` splits the loss by the target token's
-training frequency, to see whether rare tokens gain while frequent ones pay.
+**Loss by token frequency.** `experiments/eval_by_frequency.py` evaluates the
+same checkpoints on 5M validation tokens. It splits the loss by how often the
+target token occurs in `train.bin`, then reports Δ vs baseline (mean of 2 seeds)
+and the baseline's own seed std:
+
+| train count of target | <10 | 10–100 | 100–1k | 1k–10k | 10k–100k | 100k–1M | ≥1M |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| share of val tokens | ~0% | ~0% | 2.0% | 15.7% | 26.7% | 19.7% | 35.9% |
+| baseline loss | 17.80 | 12.44 | 8.14 | 6.40 | 5.20 | 3.82 | 1.94 |
+| `contain` | −3.51 | −0.05 | +0.163 | +0.007 | −0.003 | −0.006 | −0.004 |
+| `contain:shuffled` | −1.62 | +0.87 | +0.333 | +0.042 | +0.010 | +0.005 | +0.004 |
+| `prefix` | −3.54 | −0.26 | +0.154 | +0.008 | −0.002 | +0.002 | +0.001 |
+| `prefix:shuffled` | −1.70 | +0.89 | +0.366 | +0.056 | +0.018 | +0.012 | +0.004 |
+| baseline seed std | 0.05 | 0.14 | 0.023 | 0.016 | 0.001 | 0.006 | 0.000 |
+
+* **Frequent tokens (≥ 10k, 82% of text): the real penalties are free.** Their
+  changes are within ±0.006, while the shuffled controls cost +0.004 to +0.018.
+* **Moderately rare tokens (100–1k): the real penalties hurt.** They cost
+  about +0.16, half the shuffled cost. These tokens have enough data to learn
+  distinct embeddings, and the penalty blurs them into their neighbours. This
+  bucket alone accounts for most of `prefix`'s +0.004 average cost
+  (2% × 0.15 ≈ 0.003).
+* **The rarest tokens (< 100): every penalty helps, the real graph most.**
+  Rarest-bucket gains are about 2× the shuffled gains, and on 10–100 the real
+  penalty helps while the shuffled one hurts (+0.9). These tokens are a
+  negligible share of FineWeb validation text, so the gain doesn't move the
+  average.
+
+The trade-off runs opposite to the simple "rare tokens gain" hypothesis in
+the 100–1k band. That points to a **frequency-aware penalty**: strong for
+tokens with little data, off for tokens with enough. It also points to
+evaluations where rare tokens matter, such as larger vocabularies,
+out-of-domain text and low-resource languages.
 
 ## First results (`experiments/spectral_probe.py`)
 

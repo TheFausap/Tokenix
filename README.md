@@ -304,6 +304,40 @@ tokens with little data, off for tokens with enough. It also points to
 evaluations where rare tokens matter, such as larger vocabularies,
 out-of-domain text and low-resource languages.
 
+**Out-of-domain evaluation.** `experiments/prepare_eval_sets.py` builds 2M-token
+sets of Python code, Italian/German/Russian Wikipedia and PubMed/arXiv
+articles. The same checkpoints are evaluated on them. The table shows Δ mean
+loss vs baseline, averaged over 2 seeds:
+
+| eval set | `contain` | `contain:shuffled` | `prefix` | `prefix:shuffled` | baseline seed std |
+|---|---:|---:|---:|---:|---:|
+| fineweb (in-domain) | +0.001 | +0.019 | +0.004 | +0.025 | 0.002 |
+| wiki_de | −0.001 | +0.019 | −0.015 | +0.026 | 0.039 |
+| wiki_it | +0.004 | +0.020 | −0.002 | +0.037 | 0.011 |
+| wiki_ru | +0.036 | +0.013 | +0.028 | +0.015 | 0.003 |
+| arxiv | **+0.110** | −0.005 | **+0.182** | +0.017 | 0.003 |
+| pubmed | **+0.152** | −0.015 | **+0.210** | −0.011 | 0.010 |
+| code_python | **+0.247** | +0.011 | **+0.247** | +0.044 | 0.040 |
+
+* **German and Italian:** the real penalties are free or slightly better, and
+  0.02–0.04 better than their shuffled controls. On targets seen 10–100 times
+  in training, the real graph helps (−0.4 to −0.9) while the shuffled one hurts
+  (+0.2 to +0.4). This is the rare-token borrowing effect, but it is weak.
+* **Code, arXiv and PubMed:** the real penalties cost +0.11 to +0.25, 10–60×
+  the seed noise, while the shuffled controls stay near zero. The damage comes
+  from the graph's structure. Hypothesis: the graphs link tokens that are
+  spelled alike but work differently, such as whitespace runs (indentation),
+  digit strings and punctuation variants. Those distinctions barely matter in
+  English web text but do in code and scientific writing.
+  `experiments/token_diagnostics.py` tests this by splitting the change by
+  token category and listing the token types that drive it.
+* **Russian:** GPT-2 spells Cyrillic as byte pieces, so almost every target has
+  1k–10k training occurrences. Real and shuffled penalties behave alike, so
+  what little effect there is comes from generic smoothing.
+* The per-bucket "rare" averages on these sets can be dominated by a few
+  repeated token types (for example arXiv's `@xmath` placeholders), with seed
+  std up to 9 nats. The all-token deltas above are the reliable measure.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,

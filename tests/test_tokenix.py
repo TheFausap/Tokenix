@@ -248,3 +248,31 @@ def test_torch_penalty_matches_numpy(tok):
     Et = torch.tensor(E, requires_grad=True)
     GraphPenalty(W)(Et).backward()
     assert Et.grad[len(tok):].abs().sum() == 0
+
+
+def test_cosine_penalty_ignores_row_norms_and_keep_mask(tok):
+    torch = pytest.importorskip("torch")
+    from tokenix.torch_penalty import GraphPenalty
+
+    rng = np.random.default_rng(0)
+    E = torch.tensor(rng.standard_normal((len(tok), 8)))
+    W = containment_graph(tok)
+    pen = GraphPenalty(W, mode="cosine")
+    scaled = E * torch.tensor(rng.uniform(0.1, 50, (len(tok), 1)))
+    assert abs(pen(E).item() - pen(scaled).item()) < 1e-5  # row norms are invisible
+    Et = E.clone().requires_grad_(True)
+    pen(Et).backward()
+    radial = (Et.grad * Et.detach()).sum(dim=1)  # gradient has no component along each row
+    assert radial.abs().max() < 1e-5
+    # Rayleigh mode *can* be lowered by inflating a smooth cluster: the loophole cosine closes
+    ray = GraphPenalty(W)
+    pair = [0, int(W[0].nonzero()[1][0])]  # token 0 and one graph neighbour
+    E2 = E.clone()
+    E2[pair] = E[0] * 20
+    assert ray(E2).item() < ray(E).item()
+
+    keep = np.ones(len(tok), bool)
+    keep[0] = False
+    masked = GraphPenalty(W, mode="cosine", keep=keep)
+    assert masked.n_edges == pen.n_edges - W[0].nnz
+    assert not ((masked.rows == 0) | (masked.cols == 0)).any()

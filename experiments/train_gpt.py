@@ -164,6 +164,20 @@ class GraphProbe:
 # ----------------------------------------------------------------------------- main
 
 
+def train_counts(data: Path, vocab: int) -> np.ndarray:
+    """Occurrences of each token id in ``train.bin`` (cached as ``train_counts.npy``)."""
+    path = data / "train_counts.npy"
+    if path.exists():
+        return np.load(path)
+    arr = np.memmap(data / "train.bin", dtype=np.uint16, mode="r")
+    counts = np.zeros(vocab, dtype=np.int64)
+    step = 50_000_000
+    for i in range(0, len(arr), step):  # chunked: bincount of 500M ids at once needs ~4 GB
+        counts += np.bincount(arr[i : i + step], minlength=vocab)[:vocab]
+    np.save(path, counts)
+    return counts
+
+
 def load_spec(tokenizer_json: str | None):
     from tokenix.io import load_hf_tokenizer_json
 
@@ -193,6 +207,10 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("runs"))
     ap.add_argument("--condition", default="baseline")
     ap.add_argument("--lam", type=float, default=0.1, help="graph penalty weight")
+    ap.add_argument("--penalty", default="rayleigh", choices=["rayleigh", "cosine"],
+                    help="rayleigh: tr(E'LE)/|E|^2 (lets unseen-token clusters inflate); cosine: on unit rows")
+    ap.add_argument("--min_count", type=int, default=0,
+                    help="drop graph edges touching tokens seen fewer than this many times in train.bin")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--preset", default="base", choices=PRESETS)
     ap.add_argument("--tokens", type=float, default=5e8, help="training tokens")
@@ -217,7 +235,10 @@ def main() -> None:
         torch.backends.cudnn.allow_tf32 = True
     ctx = torch.autocast("cuda", dtype=torch.bfloat16) if device == "cuda" else torch.autocast("cpu", enabled=False)
 
-    name = args.name or (args.condition.replace(":", "-") + ("" if args.condition == "baseline" else f"_lam{args.lam:g}") + f"_s{args.seed}")
+    tag = ""
+    if args.condition != "baseline":
+        tag = f"_lam{args.lam:g}" + ("_cos" if args.penalty == "cosine" else "") + (f"_mc{args.min_count}" if args.min_count else "")
+    name = args.name or (args.condition.replace(":", "-") + tag + f"_s{args.seed}")
     run = args.out / name
     run.mkdir(parents=True, exist_ok=True)
 
@@ -231,7 +252,10 @@ def main() -> None:
         if gname not in GRAPHS or mod not in ("", "shuffled"):
             raise SystemExit(f"bad --condition {args.condition!r}")
         perm = np.random.default_rng(SHUFFLE_SEED).permutation(len(spec)) if mod else None
-        penalty = GraphPenalty(graphs[gname], perm).to(device)
+        keep = train_counts(args.data, len(spec)) >= args.min_count if args.min_count else None
+        penalty = GraphPenalty(graphs[gname], perm, mode=args.penalty, keep=keep).to(device)
+        print(f"penalty: {gname}{' (shuffled)' if mod else ''}, {args.penalty}, {penalty.n_edges:,} edges"
+              + (f", tokens with < {args.min_count} train occurrences excluded" if args.min_count else ""))
 
     # --- model / optimiser
     cfg = GPTConfig(**PRESETS[args.preset])

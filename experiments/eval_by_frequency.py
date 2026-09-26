@@ -28,23 +28,10 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from train_gpt import GPT, GPTConfig  # noqa: E402
+from train_gpt import GPT, GPTConfig, train_counts  # noqa: E402
 
 EDGES = [0, 10, 100, 1_000, 10_000, 100_000, 1_000_000, np.inf]
 LABELS = ["<10", "10–100", "100–1k", "1k–10k", "10k–100k", "100k–1M", "≥1M"]
-
-
-def train_counts(data: Path, vocab: int) -> np.ndarray:
-    path = data / "train_counts.npy"
-    if path.exists():
-        return np.load(path)
-    arr = np.memmap(data / "train.bin", dtype=np.uint16, mode="r")
-    counts = np.zeros(vocab, dtype=np.int64)
-    step = 50_000_000
-    for i in range(0, len(arr), step):  # chunked: bincount of 500M ids at once needs ~4 GB
-        counts += np.bincount(arr[i : i + step], minlength=vocab)[:vocab]
-    np.save(path, counts)
-    return counts
 
 
 @torch.no_grad()

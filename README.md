@@ -338,6 +338,38 @@ loss vs baseline, averaged over 2 seeds:
   repeated token types (for example arXiv's `@xmath` placeholders), with seed
   std up to 9 nats. The all-token deltas above are the reliable measure.
 
+**What drives the out-of-domain damage.** `experiments/token_diagnostics.py`
+splits each delta by token category and lists the token types behind it. For
+`prefix`, the damage sits in *punct/symbol*: +0.155 of +0.247 on code, +0.201
+of +0.210 on PubMed and +0.157 of +0.182 on arXiv. Whitespace gets better
+(−0.045 on code) and digits are neutral. About eight brace tokens (`{`, ` {`,
+`}`, ` }`, `{\`, `}}`, `},`, `})`) are each 15–50 nats worse per occurrence.
+They occur 0–218 times in the FineWeb-Edu training data.
+
+The embedding norms show why:
+
+| token | baseline | `prefix` | `contain` | `prefix:shuffled` |
+|---|---:|---:|---:|---:|
+| `{` | 1.39 | 21.4 | 21.1 | 0.94 |
+| ` {` | 1.39 | 21.6 | 20.8 | 2.77 |
+| `}` | 0.89 | 16.0 | 14.8 | 0.65 |
+| `\r` | 1.40 | 13.1 | 13.8 | 2.00 |
+| `\n\n` | 1.39 | 0.54 | 0.57 | 0.63 |
+| median, all tokens | 0.91 | 0.83 | 0.82 | 0.91 |
+
+The penalty `tr(EᵀLE)/‖E‖²` has a loophole. Tokens never seen in training get
+no signal from the language-model loss. So a cluster of them that is smooth on
+the graph lowers the quotient by growing together, and that is what happened
+to the unseen braces and `\r`. The shuffled graph links them to random,
+mostly trained tokens, so it forms no such cluster and nothing inflates. An
+unseen token next to a well-trained one (`\n\n` next to `\n`) is pulled
+toward it and improves (−5 nats per occurrence on code).
+
+The fixes are in `tokenix/torch_penalty.py`: `--penalty cosine` (the energy on
+unit-normalised rows, which row norms cannot game) and `--min_count N`
+(drops edges touching tokens seen fewer than N times). Retraining with them is
+step 10 of the notebook.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,

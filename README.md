@@ -166,6 +166,34 @@ Caveats: token frequency is not controlled; under-trained "glitch" tokens could
 shift the numbers; and all four models share one tokenizer and one training
 corpus.
 
+## Pythia results: untied input and output embeddings
+
+Pythia (EleutherAI) uses the GPT-NeoX tokenizer, which is also a byte-level BPE
+with 50k tokens. It keeps **separate** input (`embed_in`) and output
+(`embed_out`) matrices, and all sizes share one tokenizer and one training set.
+The run is `python experiments/pretrained_probe.py --models EleutherAI/pythia-160m ...`.
+All figures use the mean-centred embeddings and the length-stratified null.
+
+| model | poset ratio: in / out | merge ratio: in / out | prefix cos: in / out | suffix cos: in / out | space-variant cos: in / out |
+|-------|------------------------|-----------------------|----------------------|----------------------|-----------------------------|
+| pythia-160m | 0.788 / **0.706** | 0.893 / 0.811 | 0.21 / 0.38 | 0.17 / 0.16 | 0.56 / 0.49 |
+| pythia-410m | 0.778 / 0.770 | 0.889 / 0.882 | 0.22 / 0.30 | 0.18 / 0.11 | 0.58 / 0.58 |
+| pythia-1.4b | 0.783 / 0.777 | 0.890 / 0.890 | 0.21 / 0.28 | 0.18 / 0.11 | 0.55 / 0.59 |
+| pythia-2.8b | 0.782 / 0.777 | 0.889 / 0.892 | 0.21 / 0.27 | 0.18 / 0.10 | 0.54 / 0.61 |
+
+Infix edges stay at chance (≈ 0.01–0.02) and the length-matched nulls are
+≤ 0.02 throughout.
+
+* **The ~0.78 poset ratio holds across 8 models.** It appears for both
+  tokenizers, for tied (GPT-2) and untied (Pythia) embeddings, and from 124M to
+  2.8B parameters. Only Pythia-160m's output matrix is noticeably smoother.
+* **Input and output embeddings share the ratio but not its make-up.** Output
+  embeddings are more prefix-driven (0.27–0.30 vs 0.21) and less suffix-driven
+  (0.10–0.11 vs 0.18). One hypothesis, not yet tested: the output matrix scores
+  candidate next tokens, and tokens that share a beginning compete for the same
+  continuation. The input matrix encodes content, where morphology at the end
+  of a word (`-ing`, `-ed`) matters.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,
@@ -214,8 +242,10 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Run H1/H2 on a model with untied embeddings (Llama 3, needs `HF_TOKEN`) to
-  compare `E_in` and `E_out`, and on other tokenizers and vocabulary sizes.
+* Run H1/H2 on Llama 3 (128k vocabulary; 3.1-8B has untied embeddings) and
+  other tokenizers and vocabulary sizes.
+* Track the ratio over Pythia's training checkpoints to see when the structure
+  appears.
 * Add a prefix-trie graph and a frequency-stratified null, since word-boundary
   edges carry the GPT-2 signal.
 * Test on a transformer rather than a bigram model, where input and output

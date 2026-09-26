@@ -216,3 +216,35 @@ def test_range_reads_retry_and_chunk(monkeypatch):
     monkeypatch.setattr(hub.time, "sleep", lambda s: None)
     assert hub._read_range("u", 5, 4005) == blob[5:4005]
     assert calls["n"] == 5  # 4 chunks + 1 retry
+
+
+def test_prefix_graph():
+    from tokenix.graphs import prefix_graph
+    from tokenix.spec import TokenizerSpec
+
+    spec = TokenizerSpec([b"u", b"n", b" ", b"un", b"und", b"d", b" un", b" und"])
+    W = prefix_graph(spec).toarray()
+    i = spec.index
+    assert W[i[b"und"], i[b"un"]] and W[i[b"un"], i[b"u"]]  # trie parents
+    assert W[i[b" und"], i[b" un"]] and W[i[b" un"], i[b" "]]
+    assert W[i[b" un"], i[b"un"]] and W[i[b" und"], i[b"und"]]  # space variants
+    assert not W[i[b"und"], i[b"u"]]  # only the longest prefix
+    assert (W == W.T).all()
+
+
+def test_torch_penalty_matches_numpy(tok):
+    torch = pytest.importorskip("torch")
+    from tokenix.torch_penalty import GraphPenalty
+
+    rng = np.random.default_rng(0)
+    E = rng.standard_normal((len(tok) + 3, 8))  # padded rows are ignored
+    W = containment_graph(tok)
+    ref = alignment.dirichlet_energy(E[: len(tok)], laplacian(W))
+    assert abs(GraphPenalty(W)(torch.tensor(E)).item() - ref) < 1e-5
+    perm = rng.permutation(len(tok))
+    inv = np.argsort(perm)
+    ref_p = alignment.dirichlet_energy(E[: len(tok)], laplacian(W[inv][:, inv]))
+    assert abs(GraphPenalty(W, perm)(torch.tensor(E)).item() - ref_p) < 1e-5
+    Et = torch.tensor(E, requires_grad=True)
+    GraphPenalty(W)(Et).backward()
+    assert Et.grad[len(tok):].abs().sum() == 0

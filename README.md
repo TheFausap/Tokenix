@@ -242,6 +242,38 @@ about 30–35 minutes per run. Then run
 The claim holds only if `prefix` beats **both** `baseline` and
 `prefix:shuffled` by more than the seed-to-seed spread.
 
+### H4 results: ~51M-parameter GPT, 250M tokens, A100
+
+A λ sweep at 100M tokens (one seed each) came first. The real prefix penalty's
+cost fell from +0.012 at λ = 0.03 to +0.003 at λ = 0.3, then rose (+0.052 at
+λ = 1, +0.162 at λ = 3). The shuffled control's cost only grew with λ
+(+0.019 → +0.115). The main grid uses λ = 0.3 with 2 seeds per condition:
+
+| condition | Δ val loss vs baseline (4.0042) | seed std | Dir(prefix) | Dir(contain) |
+|-----------|--------------------------------:|---------:|------------:|-------------:|
+| baseline | — | 0.0021 | 0.80 | 0.84 |
+| `contain` | **+0.0015** | 0.0018 | 0.25 | 0.25 |
+| `contain:shuffled` | +0.0193 | 0.0065 | 0.85 | 0.88 |
+| `prefix` | **+0.0046** | 0.0002 | 0.19 | 0.33 |
+| `prefix:shuffled` | +0.0253 | 0.0012 | 0.89 | 0.91 |
+
+* **The penalty does not lower loss.** `contain` is within noise of the
+  baseline and `prefix` is slightly worse. As a way to improve training at
+  this scale, H4 is negative.
+* **The tokenizer's structure is nearly free to impose; arbitrary structure is
+  not.** The real penalties push the embedding far beyond where training
+  leaves it on its own (Dirichlet ratio 0.19–0.25 vs 0.80), and cost at most
+  0.005. The same penalty on a relabelled graph with an identical spectrum
+  costs 0.019–0.025, 4–13× more. That gap is well outside the seed spread.
+* **One reading:** the model is indifferent to smoothing along tokenizer
+  edges, so little of the information it needs lies in how ` the` differs from
+  `the`, or `under` from `understand`. The ~0.8 that models reach naturally is
+  not a limit.
+
+The next check reuses these checkpoints:
+`experiments/eval_by_frequency.py` splits the loss by the target token's
+training frequency, to see whether rare tokens gain while frequent ones pay.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,

@@ -6,6 +6,7 @@ shape ``(V, V)`` -- a weighted adjacency matrix -- so they plug directly into
 
 * :func:`merge_graph`       -- undirected merge DAG: ``c`` joined to ``a`` and ``b``.
 * :func:`containment_graph` -- Hasse diagram of the substring order on ``V``.
+* :func:`prefix_graph`      -- prefix trie on ``V`` (+ leading-space variants).
 * :func:`transition_graph`  -- token co-occurrence (bigrams) in an encoded corpus.
 
 The first two depend on the tokenizer alone; the third on tokenizer + data.
@@ -65,6 +66,28 @@ def containment_graph(spec: TokenizerSpec, max_len: int = 32) -> sp.csr_matrix:
             if not any(v != t and ts in spec.tokens[v] for v in below):
                 rows.append(u)
                 cols.append(t)
+    return _symmetric(rows, cols, np.ones(len(rows)), len(spec)).sign()
+
+
+def prefix_graph(spec: TokenizerSpec, space_variants: bool = True) -> sp.csr_matrix:
+    """Each token joined to its longest proper prefix in the vocabulary (the
+    prefix-trie parent) and, optionally, ``t`` joined to ``" " + t``.
+
+    In pretrained GPT-2 / Pythia embeddings these word-boundary relations carry
+    most of the substring-poset signal; infix containment carries none.
+    """
+    index = spec.index
+    rows, cols = [], []
+    for u, s in enumerate(spec.tokens):
+        for k in range(len(s) - 1, 0, -1):
+            t = index.get(s[:k])
+            if t is not None:
+                rows.append(u)
+                cols.append(t)
+                break
+        if space_variants and s[:1] == b" " and len(s) > 1 and s[1:] in index:
+            rows.append(u)
+            cols.append(index[s[1:]])
     return _symmetric(rows, cols, np.ones(len(rows)), len(spec)).sign()
 
 

@@ -38,16 +38,22 @@ tokenix/
   bpe.py          dependency-free byte-level BPE trainer / encoder
   io.py           load Hugging Face tokenizer.json (BPE) files
   hub.py          stdlib-only Hub access; range-reads a single tensor out of safetensors
-  graphs.py       merge_graph, containment_graph (substring Hasse diagram), transition_graph
+  graphs.py       merge_graph, containment_graph (substring Hasse diagram), prefix_graph, transition_graph
   spectral.py     Laplacians, eigendecomposition, Fiedler value/vector, heat trace
   embedding.py    SVD / polar decomposition, effective & stable rank, power-law α, anisotropy
   alignment.py    Dirichlet energy, graph-frequency profile, subspace alignment
   constraints.py  spectrum projection, Laplacian-eigenmap init, Dirichlet gradient
+  torch_penalty.py  the Dirichlet-ratio penalty in PyTorch (edge-list form)
   lm.py           tied-embedding bigram LM (NumPy, full-batch Adam) as a controlled testbed
   corpus.py       offline corpus: Python stdlib docstrings
 experiments/
   spectral_probe.py   first end-to-end probe of H1–H4 (toy BPE + bigram LM)
   pretrained_probe.py H1/H2 on pretrained models (GPT-2 small → XL by default)
+  prepare_data.py     FineWeb-Edu → GPT-2 token ids (uint16 .bin)
+  train_gpt.py        small GPT with a tokenizer-graph penalty on its embedding (H4)
+  summarize_runs.py   compare training runs: final loss, speed-up, Dirichlet ratios
+notebooks/
+  colab_train.ipynb   the H4 training grid on a single Colab A100
 tests/
 ```
 
@@ -194,6 +200,48 @@ Infix edges stay at chance (≈ 0.01–0.02) and the length-matched nulls are
   continuation. The input matrix encodes content, where morphology at the end
   of a word (`-ing`, `-ed`) matters.
 
+## Llama 3.2-1B: a third tokenizer
+
+Llama 3 has a 128k-token vocabulary, and the 1B model ties its embeddings.
+With the mean-centred `E` and the length null, the substring-poset ratio is
+**0.756** and the merge-graph ratio 0.835. The edge kinds keep the same order:
+space variant 0.61 > prefix 0.27 > suffix 0.21 > infix 0.03, with nulls ≤ 0.003.
+Llama's converted tokenizer lists several merge paths for many tokens, so its
+merge graph has ~550k edges against ~270k in the poset.
+
+| tokenizer | vocab | models | poset ratio |
+|-----------|------:|--------|------------:|
+| GPT-2 | 50k | gpt2 small → xl (tied) | 0.773–0.780 |
+| GPT-NeoX | 50k | pythia 160m → 2.8b (untied, in / out) | 0.778–0.788 / 0.706–0.777 |
+| Llama 3 | 128k | Llama-3.2-1B (tied) | 0.756 |
+
+## Training with a graph penalty (H4)
+
+`experiments/train_gpt.py` trains a small GPT on FineWeb-Edu with the GPT-2
+tokenizer and tied embeddings. The objective is
+
+    cross-entropy + λ · tr(Eᵀ L E) / ‖E‖²_F
+
+where `L` is the normalised Laplacian of a tokenizer graph (`--condition prefix`,
+`contain` or `merge`). Adding `:shuffled` applies the same penalty to a
+vertex-relabelled copy of the graph: identical spectrum and degrees, no
+meaning. That control separates a structural effect from plain
+regularisation. Every eval logs the validation loss and the embedding's
+Dirichlet ratios on the prefix and substring graphs, and saves a resumable
+checkpoint.
+
+The penalty targets the prefix graph (trie parents plus the ` t`↔`t` edges)
+because, in pretrained models, those word-boundary edges carry the signal.
+
+To run it on a single A100, open `notebooks/colab_train.ipynb` in Colab. It
+prepares 500M tokens (cached on Drive), checks throughput, offers an optional
+λ sweep, and runs 5 conditions × 2 seeds of a ~51M-parameter model. That is
+about 30–35 minutes per run. Then run
+`python experiments/summarize_runs.py runs/ --plot runs/curves.png`.
+
+The claim holds only if `prefix` beats **both** `baseline` and
+`prefix:shuffled` by more than the seed-to-seed spread.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,
@@ -242,14 +290,11 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Run H1/H2 on Llama 3 (128k vocabulary; 3.1-8B has untied embeddings) and
-  other tokenizers and vocabulary sizes.
+* Run H4 on the A100 (`notebooks/colab_train.ipynb`).
+* Llama-3.1-8B for untied input/output embeddings with a 128k vocabulary.
 * Track the ratio over Pythia's training checkpoints to see when the structure
   appears.
-* Add a prefix-trie graph and a frequency-stratified null, since word-boundary
-  edges carry the GPT-2 signal.
-* Test on a transformer rather than a bigram model, where input and output
-  geometry can differ (tied vs. untied embeddings).
+* Add a frequency-stratified null.
 * Treat `Σ` as a hyperparameter family: learnable-but-regularised spectra and
   spectral normalisation of `E` only.
 * Build graph-aware tokenizers, choosing merges to shape the vocabulary graph's

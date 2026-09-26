@@ -239,11 +239,15 @@ def test_torch_penalty_matches_numpy(tok):
     rng = np.random.default_rng(0)
     E = rng.standard_normal((len(tok) + 3, 8))  # padded rows are ignored
     W = containment_graph(tok)
-    ref = alignment.dirichlet_energy(E[: len(tok)], laplacian(W))
-    assert abs(GraphPenalty(W)(torch.tensor(E)).item() - ref) < 1e-5
+    def ref(W):  # Rayleigh quotient with the denominator over vertices that have an edge
+        X = E[: len(tok)]
+        on = np.asarray(W.sum(axis=1)).ravel() > 0
+        return float(np.sum(X * (laplacian(W) @ X)) / np.sum(X[on] ** 2))
+
+    assert abs(GraphPenalty(W)(torch.tensor(E)).item() - ref(W)) < 1e-5
     perm = rng.permutation(len(tok))
     inv = np.argsort(perm)
-    ref_p = alignment.dirichlet_energy(E[: len(tok)], laplacian(W[inv][:, inv]))
+    ref_p = ref(W[inv][:, inv])
     assert abs(GraphPenalty(W, perm)(torch.tensor(E)).item() - ref_p) < 1e-5
     Et = torch.tensor(E, requires_grad=True)
     GraphPenalty(W)(Et).backward()
@@ -276,3 +280,26 @@ def test_cosine_penalty_ignores_row_norms_and_keep_mask(tok):
     masked = GraphPenalty(W, mode="cosine", keep=keep)
     assert masked.n_edges == pen.n_edges - W[0].nnz
     assert not ((masked.rows == 0) | (masked.cols == 0)).any()
+
+
+def test_rayleigh_ignores_rows_outside_the_graph(tok):
+    """Masked or isolated rows must not lower the quotient by growing (the mc1 loophole)."""
+    torch = pytest.importorskip("torch")
+    from tokenix.torch_penalty import GraphPenalty
+
+    rng = np.random.default_rng(0)
+    E = torch.tensor(rng.standard_normal((len(tok), 8)))
+    keep = np.ones(len(tok), bool)
+    keep[:5] = False
+    pen = GraphPenalty(containment_graph(tok), keep=keep)
+    E2 = E.clone()
+    E2[:5] *= 100
+    assert abs(pen(E).item() - pen(E2).item()) < 1e-6
+    # and the value still matches the NumPy reference on the kept subgraph
+    W = containment_graph(tok).tolil()
+    W[:5, :] = 0
+    W[:, :5] = 0
+    W = W.tocsr()
+    sub = np.asarray(W.sum(axis=1)).ravel() > 0
+    ref = float(np.sum(E.numpy() * (laplacian(W) @ E.numpy())) / np.sum(E.numpy()[sub] ** 2))
+    assert abs(pen(E).item() - ref) < 1e-5

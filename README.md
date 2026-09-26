@@ -370,6 +370,33 @@ unit-normalised rows, which row norms cannot game) and `--min_count N`
 (drops edges touching tokens seen fewer than N times). Retraining with them is
 step 10 of the notebook.
 
+**After the fix** (λ = 0.3, 2 seeds, 250M tokens). The table shows Δ mean loss
+vs baseline on all tokens; "shuf" is the shuffled-graph control:
+
+| eval set | `prefix` (Rayleigh) | **`prefix` cosine** | shuf cosine | baseline seed std |
+|---|---:|---:|---:|---:|
+| fineweb | +0.004 | +0.026 | +0.066 | 0.002 |
+| arxiv | +0.182 | **−0.055** | +0.024 | 0.003 |
+| code_python | +0.247 | **−0.063** | +0.037 | 0.040 |
+| pubmed | +0.210 | **−0.016** | +0.004 | 0.010 |
+| wiki_de | −0.015 | −0.010 | +0.075 | 0.039 |
+| wiki_it | −0.002 | +0.003 | +0.074 | 0.011 |
+| wiki_ru | +0.028 | +0.005 | +0.032 | 0.003 |
+
+* **The cosine penalty removes the out-of-domain damage and turns it into a
+  gain.** The real graph beats the baseline on code, arXiv and PubMed, and
+  beats its shuffled control on every set by 0.02–0.10. Brace norms are 1.8
+  (baseline 1.4), not 21.
+* **It costs more in-domain.** +0.017 on the 5M-token FineWeb validation (step
+  5), against +0.005 for the Rayleigh version, while smoothing less (Dirichlet
+  ratio 0.39 vs 0.19). Aligning the directions of trained tokens is not free.
+  λ = 0.3 was untuned for this penalty; λ = 0.1 is step 11.
+* **The first `--min_count 1` runs were flawed.** Masked rows stayed in the
+  Rayleigh denominator, so all 282 unseen tokens could grow for free (norm
+  ~13.5, in the real and shuffled runs alike). Both were catastrophic out of
+  domain (+0.3 to +0.9). Fixed: the denominator now runs over graph vertices
+  only. Re-runs are tagged `_mask1`.
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,

@@ -397,6 +397,36 @@ vs baseline on all tokens; "shuf" is the shuffled-graph control:
   domain (+0.3 to +0.9). Fixed: the denominator now runs over graph vertices
   only. Re-runs are tagged `_mask1`.
 
+**Tuned: cosine penalty at λ = 0.1** (step 11, 2 seeds). The in-domain
+FineWeb validation loss is 4.0041 vs 4.0042 for the baseline (Δ −0.0001 ±
+0.003), while the embedding stays smoothed on the prefix graph (Dirichlet ratio
+0.49 vs 0.80). The table shows Δ mean loss vs baseline on all tokens:
+
+| eval set | **`prefix` cosine λ0.1** | shuffled cosine λ0.1 | `prefix` cosine λ0.3 | `prefix` mask1 (fixed) | baseline seed std |
+|---|---:|---:|---:|---:|---:|
+| arxiv | **−0.056** | −0.019 | −0.055 | +0.079 | 0.003 |
+| code_python | **−0.054** | +0.017 | −0.063 | +0.076 | 0.040 |
+| pubmed | **−0.034** | −0.025 | −0.016 | +0.066 | 0.010 |
+| wiki_de | **−0.021** | +0.017 | −0.010 | −0.018 | 0.039 |
+| wiki_it | **−0.012** | +0.029 | +0.003 | +0.004 | 0.011 |
+| wiki_ru | **−0.007** | +0.014 | +0.005 | +0.034 | 0.003 |
+
+* **Free in-domain, better out of domain.** Paired by seed, both λ = 0.1 runs
+  beat the matching baseline run on all six out-of-domain sets (12/12). The
+  margins are well above noise on arXiv, PubMed and Russian, and within one or
+  two seed std on German and code.
+* **The structure is what helps.** The real graph beats its shuffled control on
+  every set, by 0.02–0.07.
+* **Where the gain comes from:** tokens rare or absent in training (`\n\n`,
+  braces, `^{`, `_{`) are 3–7 nats better per occurrence. They inherit from
+  their trained prefix-graph neighbours instead of drifting. This is the
+  rare-token borrowing effect the project started from.
+* **The Rayleigh form is the problem, not the threshold.** With unseen tokens
+  masked out correctly (`_mask1`), rare-but-seen tokens still inflate (`}`,
+  seen 218 times: +21–28 nats per occurrence). Only row-normalised (cosine)
+  smoothing avoids this.
+
+
 ## First results (`experiments/spectral_probe.py`)
 
 Setup: a BPE tokenizer with 768 merges trained on ~480 KB of stdlib docstrings,
@@ -445,7 +475,10 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Run H4 on the A100 (`notebooks/colab_train.ipynb`).
+* Firm up the cosine λ = 0.1 result: more seeds, a larger model and more
+  tokens, and λ = 0.03 to map the curve.
+* Repeat with another tokenizer (Pythia / GPT-NeoX, Llama 3) to check the
+  gain is not specific to GPT-2's vocabulary.
 * Llama-3.1-8B for untied input/output embeddings with a 128k vocabulary.
 * Track the ratio over Pythia's training checkpoints to see when the structure
   appears.

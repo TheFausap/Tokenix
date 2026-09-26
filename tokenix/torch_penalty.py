@@ -31,6 +31,9 @@ class GraphPenalty(torch.nn.Module):
     ``sum_ij a_ij ||e_i/|e_i| - e_j/|e_j|||^2`` with ``a_ij = w_ij / sqrt(d_i d_j)``
     normalised to sum to 1.  Row norms get no gradient from it at all.
 
+    In Rayleigh mode the denominator runs over vertices that still have an edge,
+    so rows outside the graph cannot lower the quotient by growing.
+
     ``keep`` (boolean, per token) drops every edge touching a token outside it,
     e.g. tokens seen fewer than N times in training.  It is applied in token
     space, after the optional relabelling ``perm`` (the shuffled-graph control),
@@ -60,6 +63,9 @@ class GraphPenalty(torch.nn.Module):
         self.register_buffer("cols", torch.as_tensor(cols, dtype=torch.long))
         self.register_buffer("w", torch.as_tensor(w, dtype=torch.float32))
         self.register_buffer("scale", torch.as_tensor(scale, dtype=torch.float32))
+        # Rayleigh denominator over graph vertices only: a row outside every edge (masked by
+        # ``keep``, or isolated) would otherwise lower the quotient just by growing.
+        self.register_buffer("in_graph", torch.as_tensor(deg > 0))
         self.n, self.mode, self.n_edges = n, mode, len(w)
 
     def forward(self, E: torch.Tensor) -> torch.Tensor:
@@ -69,4 +75,4 @@ class GraphPenalty(torch.nn.Module):
             return (self.w * (X[self.rows] - X[self.cols]).pow(2).sum(dim=1)).sum()
         X = E * self.scale[:, None]
         diff = X[self.rows] - X[self.cols]
-        return (self.w * diff.pow(2).sum(dim=1)).sum() / E.pow(2).sum()
+        return (self.w * diff.pow(2).sum(dim=1)).sum() / E[self.in_graph].pow(2).sum()

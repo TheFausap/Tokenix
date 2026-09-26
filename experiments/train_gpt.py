@@ -237,7 +237,7 @@ def main() -> None:
 
     tag = ""
     if args.condition != "baseline":
-        tag = f"_lam{args.lam:g}" + ("_cos" if args.penalty == "cosine" else "") + (f"_mc{args.min_count}" if args.min_count else "")
+        tag = f"_lam{args.lam:g}" + ("_cos" if args.penalty == "cosine" else "") + (f"_mask{args.min_count}" if args.min_count else "")
     name = args.name or (args.condition.replace(":", "-") + tag + f"_s{args.seed}")
     run = args.out / name
     run.mkdir(parents=True, exist_ok=True)

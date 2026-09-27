@@ -475,10 +475,12 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Firm up the cosine λ = 0.1 result: more seeds, a larger model and more
-  tokens, and λ = 0.03 to map the curve.
-* Repeat with another tokenizer (Pythia / GPT-NeoX, Llama 3) to check the
-  gain is not specific to GPT-2's vocabulary.
+* Firm up the cosine λ = 0.1 result (notebook steps 12–14): 4 seeds, λ = 0.03,
+  GPT-2 small (124M) on 500M tokens, and the GPT-NeoX tokenizer. The loader
+  keeps NeoX's added whitespace tokens and ties each duplicate to its BPE twin
+  (`TokenizerSpec.aliases`). Scripts read the tokenizer from the data folder's
+  `meta.json`.
+* Llama 3 (128k vocabulary) needs uint32 token files.
 * Llama-3.1-8B for untied input/output embeddings with a 128k vocabulary.
 * Track the ratio over Pythia's training checkpoints to see when the structure
   appears.

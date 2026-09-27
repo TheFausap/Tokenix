@@ -47,14 +47,28 @@ def load_hf_tokenizer_json(path: str | Path) -> TokenizerSpec:
     def to_bytes(tok: str) -> bytes:
         return bytes(decoder[ch] for ch in tok) if byte_level else tok.encode("utf-8")
 
-    size = max(vocab.values()) + 1
+    # Added tokens live outside the BPE vocab (e.g. GPT-NeoX's whitespace runs at
+    # ids 50254+); their ``content`` is plain text, not the byte-level alphabet.
+    added = {t["id"]: t["content"].encode("utf-8") for t in data.get("added_tokens", [])
+             if t["id"] not in vocab.values()}
+    size = max([*vocab.values(), *added]) + 1
     tokens: list[bytes | None] = [None] * size
     for tok, i in vocab.items():
         tokens[i] = to_bytes(tok)
+    first = {t: i for i, t in enumerate(tokens) if t is not None}
+    aliases: dict[int, int] = {}
+    for i, b in sorted(added.items()):
+        if b in first:  # duplicate string: keep a placeholder and record the alias
+            aliases[i] = first[b]
+            tokens[i] = b"<alias:" + b + b">"
+        else:
+            tokens[i] = first[b] = b
     # Fill id holes (reserved / special slots) with unique placeholders.
+    synthetic = set(aliases)
     for i, t in enumerate(tokens):
         if t is None:
             tokens[i] = f"<unused_{i}>".encode()
+            synthetic.add(i)
 
     merges = []
     for m in model.get("merges", []):
@@ -62,4 +76,4 @@ def load_hf_tokenizer_json(path: str | Path) -> TokenizerSpec:
         c = a + b
         if a in vocab and b in vocab and c in vocab:
             merges.append((vocab[a], vocab[b], vocab[c]))
-    return TokenizerSpec(tokens, merges)  # type: ignore[arg-type]
+    return TokenizerSpec(tokens, merges, aliases, synthetic)  # type: ignore[arg-type]

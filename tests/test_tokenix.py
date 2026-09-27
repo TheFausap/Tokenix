@@ -303,3 +303,25 @@ def test_rayleigh_ignores_rows_outside_the_graph(tok):
     sub = np.asarray(W.sum(axis=1)).ravel() > 0
     ref = float(np.sum(E.numpy() * (laplacian(W) @ E.numpy())) / np.sum(E.numpy()[sub] ** 2))
     assert abs(pen(E).item() - ref) < 1e-5
+
+
+def test_hf_loader_added_tokens_and_aliases(tmp_path):
+    from tokenix.graphs import prefix_graph, with_aliases
+
+    data = {
+        "added_tokens": [
+            {"id": 0, "content": "<|endoftext|>", "special": True},
+            {"id": 5, "content": "  ", "special": False},   # duplicates vocab token 'ĠĠ' -> alias
+            {"id": 6, "content": "   ", "special": False},  # new string -> real token
+        ],
+        "model": {"type": "BPE", "vocab": {"<|endoftext|>": 0, "Ġ": 1, "a": 2, "ĠĠ": 3, "Ġa": 4},
+                  "merges": ["Ġ Ġ", "Ġ a"]},
+    }
+    p = tmp_path / "tokenizer.json"
+    p.write_text(json.dumps(data))
+    spec = load_hf_tokenizer_json(p)
+    assert len(spec) == 7 and spec.tokens[6] == b"   "
+    assert spec.aliases == {5: 3} and spec.synthetic == {5}
+    W = with_aliases(prefix_graph(spec), spec).toarray()
+    assert W[5].nonzero()[0].tolist() == [3]  # the alias is tied only to its original
+    assert W[6, 3]  # '   ' has prefix parent '  '

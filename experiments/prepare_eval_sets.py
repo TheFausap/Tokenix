@@ -11,6 +11,7 @@ common here: code, other languages, specialist prose.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -42,6 +43,11 @@ def main() -> None:
     tok = Tokenizer.from_pretrained(args.tokenizer)
     eot = tok.token_to_id("<|endoftext|>")
     args.out.mkdir(parents=True, exist_ok=True)
+
+    meta = args.out / "meta.json"
+    if meta.exists() and json.loads(meta.read_text())["tokenizer"] != args.tokenizer:
+        raise SystemExit(f"{args.out} holds sets made with another tokenizer; use a new --out")
+    meta.write_text(json.dumps({"tokenizer": args.tokenizer, "vocab_size": tok.get_vocab_size()}, indent=1))
 
     for name in args.sets:
         path = args.out / f"{name}.bin"

@@ -54,6 +54,9 @@ experiments/
   summarize_runs.py   compare training runs: final loss, speed-up, Dirichlet ratios
 notebooks/
   colab_train.ipynb   the H4 training grid on a single Colab A100
+paper/
+  tokenix.tex         write-up of all results (build: pdflatex tokenix, twice)
+  make_figures.py     regenerates paper/figs/*.pdf from the result tables
 tests/
 ```
 

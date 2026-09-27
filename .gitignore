@@ -4,3 +4,10 @@ __pycache__/
 .venv/
 results/
 *.npy
+
+# LaTeX build files
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.pdf
+!paper/figs/*.pdf

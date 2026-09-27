@@ -479,6 +479,31 @@ FineWeb validation loss is 4.0041 vs 4.0042 for the baseline (Δ −0.0001 ±
   or better (NeoX, 124M, and λ = 0.03). Generic smoothing of unseen LaTeX
   tokens is all that helps there.
 
+**GPT-2 small follow-up** (notebook step 15; 124M, 500M tokens). The table
+shows Δ vs the 2-seed baseline (FineWeb 3.7742 ± 0.0013):
+
+| eval set | **cosine λ0.1 (2 seeds)** | shuffled λ0.1 (2) | cosine λ0.03 (1) | shuffled λ0.03 (1) | baseline std |
+|---|---:|---:|---:|---:|---:|
+| fineweb (5M) | **+0.0009** | +0.0170 | +0.0007 | +0.0061 | 0.0013 |
+| arxiv | **−0.041** | −0.009 | −0.038 | −0.031 | 0.012 |
+| code_python | **−0.096** | −0.082 | −0.151 | −0.120 | 0.061 |
+| pubmed | −0.017 | −0.024 | −0.022 | −0.035 | 0.005 |
+| wiki_de | **−0.027** | +0.018 | −0.027 | +0.002 | 0.001 |
+| wiki_it | **−0.017** | +0.020 | −0.043 | −0.016 | 0.014 |
+| wiki_ru | **−0.010** | −0.003 | −0.010 | −0.006 | 0.001 |
+
+* **The single-seed +0.01 in-domain cost was noise.** The second seed came in
+  below its baseline, so the 2-seed mean is +0.0009. The shuffled control costs
+  +0.017 in both seeds.
+* **At 124M the penalty is free in-domain and better on all six out-of-domain
+  sets.** It beats its shuffled control on 5/6, with PubMed again the
+  exception.
+* **λ does not need to shrink over this range.** λ = 0.03 is also free and gives
+  equal or larger out-of-domain gains (one seed). As at 51M, more of its gain is
+  generic: its shuffled control helps too. λ = 0.1 keeps the larger
+  structure-specific margin (German −0.045, Italian −0.037 vs shuffled).
+
+
 
 
 

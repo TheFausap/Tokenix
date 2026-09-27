@@ -450,6 +450,61 @@ FineWeb validation loss is 4.0041 vs 4.0042 for the baseline (Δ −0.0001 ±
   at λ = 0.1, where the shuffled penalty already costs +0.020 in-domain and the
   real one costs nothing.
 
+**Another tokenizer and a larger model** (notebook steps 13–14, cosine
+λ = 0.1). The table shows Δ vs each setting's own baseline:
+
+| eval set | NeoX tokenizer, 51M (2 seeds): real | NeoX: shuffled | NeoX baseline std | GPT-2 small 124M, 500M tokens (1 seed): real | 124M: shuffled |
+|---|---:|---:|---:|---:|---:|
+| fineweb (5M) | **−0.0001** | +0.021 | 0.008 | +0.0097 | +0.016 |
+| arxiv | **−0.031** | −0.000 | 0.014 | **−0.034** | −0.017 |
+| code_python | **−0.266** | −0.191 | 0.048 | **−0.105** | −0.079 |
+| pubmed | −0.019 | −0.032 | 0.009 | −0.011 | −0.021 |
+| wiki_de | +0.003 | +0.143 | 0.013 | **−0.027** | +0.016 |
+| wiki_it | +0.013 | +0.117 | 0.019 | **−0.015** | +0.012 |
+| wiki_ru | **−0.153** | +0.416 | 0.040 | −0.003 | +0.001 |
+
+* **The effect is not specific to GPT-2's vocabulary.** With the GPT-NeoX
+  tokenizer the penalty is again free in-domain while the shuffled graph costs
+  +0.021. The real-vs-shuffled gap is the largest seen so far: −0.57 on
+  Russian, −0.14 on German, −0.10 on Italian. NeoX encodes Cyrillic with
+  multi-byte tokens that are rare in FineWeb (81% of Russian targets). Tied
+  to their real prefix relatives they improve (−0.153); tied to random tokens
+  they get much worse (+0.416).
+* **It survives scale out of domain.** At 124M / 500M tokens the real graph
+  beats the baseline on 6/6 out-of-domain sets and its shuffled control on
+  5/6, with the code gain growing to −0.105. The in-domain +0.0097 is one seed,
+  about one 51M-scale seed std, so it may or may not be a real cost. If it is,
+  λ should shrink as models or training runs grow.
+* **PubMed is the consistent exception.** There the shuffled control is as good
+  or better (NeoX, 124M, and λ = 0.03). Generic smoothing of unseen LaTeX
+  tokens is all that helps there.
+
+**GPT-2 small follow-up** (notebook step 15; 124M, 500M tokens). The table
+shows Δ vs the 2-seed baseline (FineWeb 3.7742 ± 0.0013):
+
+| eval set | **cosine λ0.1 (2 seeds)** | shuffled λ0.1 (2) | cosine λ0.03 (1) | shuffled λ0.03 (1) | baseline std |
+|---|---:|---:|---:|---:|---:|
+| fineweb (5M) | **+0.0009** | +0.0170 | +0.0007 | +0.0061 | 0.0013 |
+| arxiv | **−0.041** | −0.009 | −0.038 | −0.031 | 0.012 |
+| code_python | **−0.096** | −0.082 | −0.151 | −0.120 | 0.061 |
+| pubmed | −0.017 | −0.024 | −0.022 | −0.035 | 0.005 |
+| wiki_de | **−0.027** | +0.018 | −0.027 | +0.002 | 0.001 |
+| wiki_it | **−0.017** | +0.020 | −0.043 | −0.016 | 0.014 |
+| wiki_ru | **−0.010** | −0.003 | −0.010 | −0.006 | 0.001 |
+
+* **The single-seed +0.01 in-domain cost was noise.** The second seed came in
+  below its baseline, so the 2-seed mean is +0.0009. The shuffled control costs
+  +0.017 in both seeds.
+* **At 124M the penalty is free in-domain and better on all six out-of-domain
+  sets.** It beats its shuffled control on 5/6, with PubMed again the
+  exception.
+* **λ does not need to shrink over this range.** λ = 0.03 is also free and gives
+  equal or larger out-of-domain gains (one seed). As at 51M, more of its gain is
+  generic: its shuffled control helps too. λ = 0.1 keeps the larger
+  structure-specific margin (German −0.045, Italian −0.037 vs shuffled).
+
+
+
 
 
 ## First results (`experiments/spectral_probe.py`)
@@ -500,8 +555,8 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Scale and tokenizer checks for cosine λ = 0.1 (notebook steps 13–14):
-  GPT-2 small (124M) on 500M tokens, and the GPT-NeoX tokenizer. The loader
+* More seeds at 124M, and λ = 0.03 there, to settle whether the in-domain
+  +0.01 is real and how λ should scale with model size. The loader
   keeps NeoX's added whitespace tokens and ties each duplicate to its BPE twin
   (`TokenizerSpec.aliases`). Scripts read the tokenizer from the data folder's
   `meta.json`.

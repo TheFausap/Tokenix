@@ -426,6 +426,31 @@ FineWeb validation loss is 4.0041 vs 4.0042 for the baseline (Δ −0.0001 ±
   seen 218 times: +21–28 nats per occurrence). Only row-normalised (cosine)
   smoothing avoids this.
 
+**Four seeds, and λ = 0.03** (notebook step 12). The table shows Δ vs the
+4-seed baseline; FineWeb is the 5M-token validation, the rest 2M tokens each:
+
+| eval set | **cosine λ0.1 (4 seeds)** | shuffled λ0.1 (4) | cosine λ0.03 (2) | shuffled λ0.03 (2) | baseline std (4) |
+|---|---:|---:|---:|---:|---:|
+| fineweb | **−0.0002** | +0.020 | +0.001 | +0.012 | 0.0096 |
+| arxiv | **−0.052** | −0.012 | −0.047 | −0.025 | 0.0035 |
+| code_python | **−0.068** | −0.002 | −0.067 | −0.024 | 0.023 |
+| pubmed | **−0.036** | −0.024 | −0.025 | −0.050 | 0.010 |
+| wiki_de | **−0.025** | +0.021 | −0.032 | −0.009 | 0.025 |
+| wiki_it | **−0.013** | +0.026 | +0.000 | +0.018 | 0.023 |
+| wiki_ru | **−0.007** | +0.010 | −0.001 | −0.002 | 0.013 |
+
+* **The λ = 0.1 result holds.** It is free in-domain (3.9982 vs 3.9983).
+  Paired by seed, it beats the baseline in 23 of 24 out-of-domain comparisons;
+  the one loss is Russian seed 2, by +0.005. It beats its shuffled control in
+  23 of 24.
+* **Part of the gain is generic, part structural.** At λ = 0.03 the shuffled
+  control also improves code, arXiv and especially PubMed (−0.050). Any mild
+  smoothing stops never-seen tokens from drifting to extreme values. The
+  real graph adds a structure-specific margin on top. That margin is cleanest
+  at λ = 0.1, where the shuffled penalty already costs +0.020 in-domain and the
+  real one costs nothing.
+
+
 
 ## First results (`experiments/spectral_probe.py`)
 
@@ -475,7 +500,7 @@ Reading these results with caution (a toy model on a small corpus):
 
 ## Next steps
 
-* Firm up the cosine λ = 0.1 result (notebook steps 12–14): 4 seeds, λ = 0.03,
+* Scale and tokenizer checks for cosine λ = 0.1 (notebook steps 13–14):
   GPT-2 small (124M) on 500M tokens, and the GPT-NeoX tokenizer. The loader
   keeps NeoX's added whitespace tokens and ties each duplicate to its BPE twin
   (`TokenizerSpec.aliases`). Scripts read the tokenizer from the data folder's

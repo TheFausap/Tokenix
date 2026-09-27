@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -74,3 +76,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    # Streaming `datasets` iterators leave background threads that can abort the
+    # interpreter at shutdown ("PyGILState_Release"); all files are written by now.
+    sys.stdout.flush()
+    os._exit(0)

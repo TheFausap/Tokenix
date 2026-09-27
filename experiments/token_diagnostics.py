@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from eval_by_frequency import per_token_loss, train_counts  # noqa: E402
+from train_gpt import check_eval_dir, data_meta, load_spec  # noqa: E402
 
 CATEGORIES = ["whitespace", "digits", "punct/symbol", "word", "byte fragment", "other"]
 
@@ -80,14 +81,14 @@ def main() -> None:
     ap.add_argument("--tokens", type=int, default=2_000_000)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--top", type=int, default=20)
-    ap.add_argument("--vocab", type=int, default=50257)
+    ap.add_argument("--vocab", type=int, default=None, help="default: vocab_size in <data>/meta.json")
     ap.add_argument("--recompute", action="store_true")
     args = ap.parse_args()
 
-    from tokenix.hub import fetch_file
-    from tokenix.io import load_hf_tokenizer_json
-
-    spec = load_hf_tokenizer_json(fetch_file("openai-community/gpt2", "tokenizer.json"))
+    spec = load_spec(data=args.data)
+    args.vocab = args.vocab or data_meta(args.data).get("vocab_size", len(spec))
+    if args.eval_dir:
+        check_eval_dir(args.eval_dir, args.data)
     cats = np.array([category(t) for t in spec.tokens[: args.vocab]])
     counts = train_counts(args.data, args.vocab)
     device = "cuda" if torch.cuda.is_available() else "cpu"

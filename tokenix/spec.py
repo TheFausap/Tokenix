@@ -23,6 +23,12 @@ class TokenizerSpec:
     tokens: list[bytes]
     merges: list[tuple[int, int, int]] = field(default_factory=list)
     """Merge rules ``(left_id, right_id, merged_id)`` in priority order."""
+    aliases: dict[int, int] = field(default_factory=dict)
+    """``alias_id -> canonical_id`` for ids whose string duplicates another token
+    (e.g. GPT-NeoX's added whitespace tokens); the alias row holds a placeholder."""
+    synthetic: set[int] = field(default_factory=set)
+    """Ids whose ``tokens`` entry is a placeholder (unused slots, aliases): graph
+    builders give them no string-based edges."""
 
     def __post_init__(self) -> None:
         self.index = {t: i for i, t in enumerate(self.tokens)}

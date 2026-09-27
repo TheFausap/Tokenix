@@ -28,7 +28,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from train_gpt import GPT, GPTConfig, train_counts  # noqa: E402
+from train_gpt import GPT, GPTConfig, check_eval_dir, data_meta, train_counts  # noqa: E402
 
 EDGES = [0, 10, 100, 1_000, 10_000, 100_000, 1_000_000, np.inf]
 LABELS = ["<10", "10–100", "100–1k", "1k–10k", "10k–100k", "100k–1M", "≥1M"]
@@ -141,12 +141,15 @@ def main() -> None:
                     help="directory of extra <name>.bin sets (experiments/prepare_eval_sets.py)")
     ap.add_argument("--tokens", type=int, default=5_000_000, help="validation tokens to evaluate per set")
     ap.add_argument("--batch", type=int, default=16)
-    ap.add_argument("--vocab", type=int, default=50257)
+    ap.add_argument("--vocab", type=int, default=None, help="default: vocab_size in <data>/meta.json")
     ap.add_argument("--detail", action="store_true", help="print the per-bucket table for every set")
     ap.add_argument("--recompute", action="store_true")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    args.vocab = args.vocab or data_meta(args.data).get("vocab_size", 50257)
+    if args.eval_dir:
+        check_eval_dir(args.eval_dir, args.data)
     counts = train_counts(args.data, args.vocab)
     sets = {"fineweb": args.data / "val.bin"}
     if args.eval_dir:

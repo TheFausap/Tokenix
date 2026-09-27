@@ -33,6 +33,8 @@ def _symmetric(rows, cols, vals, n: int) -> sp.csr_matrix:
 def merge_graph(spec: TokenizerSpec) -> sp.csr_matrix:
     rows, cols = [], []
     for a, b, c in spec.merges:
+        if {a, b, c} & spec.synthetic:
+            continue
         rows += [c, c]
         cols += [a, b]
     return _symmetric(rows, cols, np.ones(len(rows)), len(spec)).sign()
@@ -56,10 +58,13 @@ def containment_graph(spec: TokenizerSpec, max_len: int = 32) -> sp.csr_matrix:
     index = spec.index
     rows, cols = [], []
     for u, s in enumerate(spec.tokens):
+        if u in spec.synthetic:
+            continue
         below = {index[x] for x in _substrings(s[:max_len] if len(s) > max_len else s) if x in index}
         if len(s) > max_len:
             below |= {index[x] for x in _substrings(s[-max_len:]) if x in index}
         below.discard(u)
+        below -= spec.synthetic
         # Keep the maximal elements of `below`: those not contained in another.
         for t in below:
             ts = spec.tokens[t]
@@ -79,16 +84,29 @@ def prefix_graph(spec: TokenizerSpec, space_variants: bool = True) -> sp.csr_mat
     index = spec.index
     rows, cols = [], []
     for u, s in enumerate(spec.tokens):
+        if u in spec.synthetic:
+            continue
         for k in range(len(s) - 1, 0, -1):
             t = index.get(s[:k])
-            if t is not None:
+            if t is not None and t not in spec.synthetic:
                 rows.append(u)
                 cols.append(t)
                 break
-        if space_variants and s[:1] == b" " and len(s) > 1 and s[1:] in index:
+        if space_variants and s[:1] == b" " and len(s) > 1 and index.get(s[1:], -1) not in (-1, *spec.synthetic):
             rows.append(u)
             cols.append(index[s[1:]])
     return _symmetric(rows, cols, np.ones(len(rows)), len(spec)).sign()
+
+
+def with_aliases(W: sp.spmatrix, spec: TokenizerSpec) -> sp.csr_matrix:
+    """Add an edge between every alias id and the token it duplicates, so the
+    alias row is tied to that token (and through it to its neighbours)."""
+    if not spec.aliases:
+        return sp.csr_matrix(W)
+    a = np.fromiter(spec.aliases.keys(), dtype=np.int64)
+    c = np.fromiter(spec.aliases.values(), dtype=np.int64)
+    A = _symmetric(a, c, np.ones(len(a)), W.shape[0])
+    return (sp.csr_matrix(W) + A).sign().tocsr()
 
 
 def transition_graph(

@@ -38,7 +38,7 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tokenix import alignment  # noqa: E402
-from tokenix.graphs import containment_graph, merge_graph, prefix_graph  # noqa: E402
+from tokenix.graphs import containment_graph, merge_graph, prefix_graph, with_aliases  # noqa: E402
 from tokenix.spectral import laplacian  # noqa: E402
 from tokenix.torch_penalty import GraphPenalty  # noqa: E402
 
@@ -178,13 +178,30 @@ def train_counts(data: Path, vocab: int) -> np.ndarray:
     return counts
 
 
-def load_spec(tokenizer_json: str | None):
+def data_meta(data: Path) -> dict:
+    """``meta.json`` written by prepare_data.py / prepare_eval_sets.py (tokenizer, vocab size)."""
+    path = data / "meta.json"
+    meta = json.loads(path.read_text()) if path.exists() else {}
+    meta.setdefault("tokenizer", "openai-community/gpt2")
+    return meta
+
+
+def check_eval_dir(eval_dir: Path, data: Path) -> None:
+    """Refuse to score models on eval sets tokenized with a different tokenizer."""
+    ev, tr = data_meta(eval_dir)["tokenizer"], data_meta(data)["tokenizer"]
+    if ev != tr:
+        raise SystemExit(f"{eval_dir} was tokenized with {ev}, the training data with {tr}")
+
+
+def load_spec(tokenizer_json: str | None = None, data: Path | None = None):
+    """The tokenizer the data was made with (``<data>/meta.json``), or an explicit file."""
     from tokenix.io import load_hf_tokenizer_json
 
     if tokenizer_json is None:
         from tokenix.hub import fetch_file
 
-        tokenizer_json = fetch_file("openai-community/gpt2", "tokenizer.json")
+        tokenizer_json = fetch_file(data_meta(data)["tokenizer"] if data else "openai-community/gpt2",
+                                    "tokenizer.json")
     return load_hf_tokenizer_json(tokenizer_json)
 
 
@@ -243,8 +260,8 @@ def main() -> None:
     run.mkdir(parents=True, exist_ok=True)
 
     # --- tokenizer graphs (penalty + probes)
-    spec = load_spec(args.tokenizer_json)
-    graphs = {k: f(spec) for k, f in GRAPHS.items()}
+    spec = load_spec(args.tokenizer_json, args.data)
+    graphs = {k: with_aliases(f(spec), spec) for k, f in GRAPHS.items()}
     probe = GraphProbe(spec, {"contain": graphs["contain"], "prefix": graphs["prefix"]})
     penalty = None
     if args.condition != "baseline":
@@ -259,6 +276,9 @@ def main() -> None:
 
     # --- model / optimiser
     cfg = GPTConfig(**PRESETS[args.preset])
+    vocab = max(len(spec), data_meta(args.data).get("vocab_size", 0))
+    if vocab > cfg.vocab_size:
+        raise SystemExit(f"tokenizer has {vocab} ids but the model's embedding has {cfg.vocab_size} rows")
     model = GPT(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     decay = [p for n, p in model.named_parameters() if p.dim() >= 2]
